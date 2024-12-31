@@ -1,73 +1,65 @@
-import {User} from "../models/user.model.js";
 import bcrypt from "bcryptjs";
-import { generateToken } from "../utils/generateToken.js";
+import jwt from "jsonwebtoken";
+import { User } from "../models/user.model.js";
 
-export const register =async(req,res) =>{
-    try {
-        const {name, email, password} =req.body;
-        if(!name  || !email || !password){
-            return res.status(400).json({
-                success:false,
-                message: "Please fill in all fields."});
-        }
-        
-        // check the user already registration or note
- 
-        const user =await User.findOne({email});
-        if(user){
-            return res.status(400).json({
-                success:false,
-                message:"User already exist with this email."
-            })
-        }
-        const hashedPassword =await bcrypt.hash(password,10);
-        await User.create({
-            name,
-            email,
-            password:hashedPassword
-        });
-        return res.status(201).json({
-            success:true,
-            message:"Account created successfully."
-        })
-    } catch (error){
-        console.log(error);
-        return res.status(500).json({
-            success:false,
-            message:"Failed to register"
-        })
+// User Registration Controller
+export const registerUser = async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
 
+    // Check if the user already exists
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ message: "User already exists." });
     }
-}
-export const login = async (req,res) =>{
-    try{
-        const {email,password} =req.body;
-        if(!email || !password){
-            return res.status(400).json({
-                success:false,
-                message: "Please fill in all fields."});
-        }
-        const user = await User.findOne({email});
-        if(!user){
-            return res.status(400).json({
-                success:false,
-                message:"Incorrect email or password"
-            })
-        }
-        const isPasswordMatch =await bcrypt.compare(password,user.password);
-        if(!isPasswordMatch){
-            return res.status(400).json({
-                success:false,
-                message:"Incorrect email or password"
-            });
-        }
-       // 
-       generateToken(res,user, `Welcome back ${user.name}`)
-    }catch(error){
-        console.log(error);
-        return res.status(500).json({
-            success:false,
-            message:"Failed to login"
-        })
+
+    // Hash the password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Create the user
+    const newUser = new User({ name, email, password: hashedPassword });
+    await newUser.save();
+
+    res.status(201).json({ message: "User registered successfully." });
+  } catch (error) {
+    res.status(500).json({ message: "Registration failed.", error: error.message });
+  }
+};
+
+// User Login Controller
+export const loginUser = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    // Find the user by email
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(400).json({ message: "Invalid email or password." });
     }
-}
+
+    // Compare the password
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      return res.status(400).json({ message: "Invalid email or password." });
+    }
+
+    // Generate a token
+    const token = jwt.sign({ id: user._id, role: user.role }, process.env.SECRET_KEY, {
+      expiresIn: "1d",
+    });
+
+    // Set the token in a cookie
+    res.cookie("token", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+    });
+
+    res.status(200).json({
+      message: "Login successful.",
+      user: { id: user._id, name: user.name, email: user.email, role: user.role },
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Login failed.", error: error.message });
+  }
+};
